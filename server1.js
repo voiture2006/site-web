@@ -8,8 +8,7 @@ const jwt = require('jsonwebtoken');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-// Utilise une variable d'environnement sur Render pour la sécurité
-const SECRET_KEY = process.env.JWT_SECRET || "ta_cle_secrete_ici"; 
+const SECRET_KEY = process.env.JWT_SECRET || "ma_cle_secrete_pour_le_blog"; 
 
 app.use(cors());
 app.use(express.json());
@@ -20,9 +19,7 @@ let db;
 
 async function connectDB() {
     try {
-        // Chemin vers la base de données (Adapté pour le Disk Persistant de Render)
         const dbPath = process.env.DATABASE_PATH || path.join(__dirname, 'blog.db');
-        
         db = await open({
             filename: dbPath,
             driver: sqlite3.Database
@@ -39,7 +36,7 @@ async function connectDB() {
                 tags TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
-        `); [cite: 37, 38]
+        `);
 
         await db.exec(`
             CREATE TABLE IF NOT EXISTS users (
@@ -48,13 +45,12 @@ async function connectDB() {
                 password TEXT
             )
         `);
-        console.log('✅ Base de données prête sur :', dbPath);
+        console.log('✅ Base de données prête');
     } catch (error) {
         console.error('❌ Erreur SQLite:', error.message);
     }
 }
 
-// --- MIDDLEWARE DE PROTECTION ---
 const authenticateToken = (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
@@ -67,8 +63,6 @@ const authenticateToken = (req, res, next) => {
     });
 };
 
-// --- ROUTES ---
-
 app.post('/api/auth/login', async (req, res) => {
     const { username, password } = req.body;
     const user = await db.get('SELECT * FROM users WHERE username = ?', [username]);
@@ -80,7 +74,6 @@ app.post('/api/auth/login', async (req, res) => {
     }
 });
 
-// Route de création du compte Admin
 app.get('/api/auth/setup-admin', async (req, res) => {
     try {
         const hash = await bcrypt.hash("ton_mot_de_passe", 10);
@@ -110,8 +103,6 @@ app.delete('/api/articles/:id', authenticateToken, async (req, res) => {
     res.json({ success: true });
 });
 
-// --- AJOUT CRUCIAL : SERVIR LE FICHIER HTML ---
-// Cette route doit être la DERNIÈRE avant le démarrage du serveur
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
