@@ -104,7 +104,7 @@ app.delete('/api/articles/:id', authenticateToken, async (req, res) => {
 });
 
 app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
+    res.sendFile(path.join(__dirname, 'index1.html'));
 });
 
 async function start() {
