@@ -8,9 +8,8 @@ const jwt = require('jsonwebtoken');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-
-// Utilise une variable d'environnement pour la clé secrète en production !
-const SECRET_KEY = process.env.JWT_SECRET || "ma_cle_de_secours_tres_longue"; 
+// Utilise une variable d'environnement sur Render pour la sécurité
+const SECRET_KEY = process.env.JWT_SECRET || "ta_cle_secrete_ici"; 
 
 app.use(cors());
 app.use(express.json());
@@ -21,8 +20,7 @@ let db;
 
 async function connectDB() {
     try {
-        // IMPORTANT : Sur Render, on utilise /opt/render/project/src/data/ si on monte un Disk
-        // Sinon, par défaut, le fichier sera supprimé à chaque déploiement.
+        // Chemin vers la base de données (Adapté pour le Disk Persistant de Render)
         const dbPath = process.env.DATABASE_PATH || path.join(__dirname, 'blog.db');
         
         db = await open({
@@ -41,7 +39,7 @@ async function connectDB() {
                 tags TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
-        `);
+        `); [cite: 37, 38]
 
         await db.exec(`
             CREATE TABLE IF NOT EXISTS users (
@@ -50,28 +48,74 @@ async function connectDB() {
                 password TEXT
             )
         `);
-        console.log('✅ Base de données prête sur path:', dbPath);
+        console.log('✅ Base de données prête sur :', dbPath);
     } catch (error) {
         console.error('❌ Erreur SQLite:', error.message);
     }
 }
 
-// ... (Garder authenticateToken et les routes inchangées) ...
+// --- MIDDLEWARE DE PROTECTION ---
+const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    if (!token) return res.status(401).json({ error: "Authentification requise" });
 
-// Modification de la route setup-admin pour utiliser des variables d'env
-app.post('/api/auth/setup-admin', async (req, res) => {
+    jwt.verify(token, SECRET_KEY, (err, user) => {
+        if (err) return res.status(403).json({ error: "Session invalide" });
+        req.user = user;
+        next();
+    });
+};
+
+// --- ROUTES ---
+
+app.post('/api/auth/login', async (req, res) => {
+    const { username, password } = req.body;
+    const user = await db.get('SELECT * FROM users WHERE username = ?', [username]);
+    if (user && await bcrypt.compare(password, user.password)) {
+        const token = jwt.sign({ id: user.id, username: user.username }, SECRET_KEY, { expiresIn: '24h' });
+        res.json({ token });
+    } else {
+        res.status(401).json({ error: "Identifiants incorrects" });
+    }
+});
+
+// Route de création du compte Admin
+app.get('/api/auth/setup-admin', async (req, res) => {
     try {
-        const adminUser = process.env.ADMIN_USERNAME || "admin";
-        const adminPass = process.env.ADMIN_PASSWORD || "password123";
-        const hash = await bcrypt.hash(adminPass, 10);
-        await db.run('INSERT OR IGNORE INTO users (username, password) VALUES (?, ?)', [adminUser, hash]);
-        res.json({ message: "Admin configuré ou déjà existant" });
+        const hash = await bcrypt.hash("ton_mot_de_passe", 10);
+        await db.run('INSERT OR IGNORE INTO users (username, password) VALUES (?, ?)', ["admin", hash]);
+        res.json({ message: "Admin configuré" });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-// Lancer le serveur
+app.get('/api/articles', async (req, res) => {
+    const articles = await db.all('SELECT * FROM articles ORDER BY id DESC');
+    res.json(articles);
+});
+
+app.post('/api/articles', authenticateToken, async (req, res) => {
+    const { title, content, author, date, category, tags } = req.body;
+    const result = await db.run(
+        'INSERT INTO articles (title, content, author, date, category, tags) VALUES (?,?,?,?,?,?)',
+        [title, content, author, date, category, JSON.stringify(tags)]
+    );
+    res.json({ id: result.lastID });
+});
+
+app.delete('/api/articles/:id', authenticateToken, async (req, res) => {
+    await db.run('DELETE FROM articles WHERE id = ?', [req.params.id]);
+    res.json({ success: true });
+});
+
+// --- AJOUT CRUCIAL : SERVIR LE FICHIER HTML ---
+// Cette route doit être la DERNIÈRE avant le démarrage du serveur
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
+
 async function start() {
     await connectDB();
     app.listen(PORT, () => console.log(`Serveur démarré sur port ${PORT}`));
