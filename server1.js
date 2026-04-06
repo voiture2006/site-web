@@ -1,0 +1,79 @@
+const express = require('express');
+const sqlite3 = require('sqlite3').verbose();
+const { open } = require('sqlite');
+const path = require('path');
+const cors = require('cors');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Utilise une variable d'environnement pour la clé secrète en production !
+const SECRET_KEY = process.env.JWT_SECRET || "ma_cle_de_secours_tres_longue"; 
+
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static(__dirname));
+
+let db;
+
+async function connectDB() {
+    try {
+        // IMPORTANT : Sur Render, on utilise /opt/render/project/src/data/ si on monte un Disk
+        // Sinon, par défaut, le fichier sera supprimé à chaque déploiement.
+        const dbPath = process.env.DATABASE_PATH || path.join(__dirname, 'blog.db');
+        
+        db = await open({
+            filename: dbPath,
+            driver: sqlite3.Database
+        });
+        
+        await db.exec(`
+            CREATE TABLE IF NOT EXISTS articles (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                author TEXT NOT NULL,
+                date TEXT NOT NULL,
+                category TEXT NOT NULL,
+                tags TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+
+        await db.exec(`
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE,
+                password TEXT
+            )
+        `);
+        console.log('✅ Base de données prête sur path:', dbPath);
+    } catch (error) {
+        console.error('❌ Erreur SQLite:', error.message);
+    }
+}
+
+// ... (Garder authenticateToken et les routes inchangées) ...
+
+// Modification de la route setup-admin pour utiliser des variables d'env
+app.post('/api/auth/setup-admin', async (req, res) => {
+    try {
+        const adminUser = process.env.ADMIN_USERNAME || "admin";
+        const adminPass = process.env.ADMIN_PASSWORD || "password123";
+        const hash = await bcrypt.hash(adminPass, 10);
+        await db.run('INSERT OR IGNORE INTO users (username, password) VALUES (?, ?)', [adminUser, hash]);
+        res.json({ message: "Admin configuré ou déjà existant" });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Lancer le serveur
+async function start() {
+    await connectDB();
+    app.listen(PORT, () => console.log(`Serveur démarré sur port ${PORT}`));
+}
+start();

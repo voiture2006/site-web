@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        /* Style pour l'écran de login */
+        #login-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex; justify-content: center; align-items: center; z-index: 9999;
+        }
+        .login-box {
+            background: white; padding: 40px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            width: 100%; max-width: 400px; text-align: center;
+        }
+        .login-box input { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 8px; }
+        .login-box button { width: 100%; padding: 12px; background: #1a1a2e; color: white; border: none; border-radius: 8px; cursor: pointer; }
+        
+        /* Style basique pour le dashboard */
+        #dashboard-ui { padding: 20px; font-family: sans-serif; }
+        .nav { display: flex; justify-content: space-between; align-items: center; background: #f4f4f4; padding: 10px 20px; border-radius: 8px; }
+        .btn-logout { background: #ff4757; color: white; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+    <div id="login-overlay">
+        <div class="login-box">
+            <i class="fas fa-user-shield fa-3x" style="color: #667eea; margin-bottom: 20px;"></i>
+            <h2>Administration</h2>
+            <input type="text" id="loginUser" placeholder="Nom d'utilisateur">
+            <input type="password" id="loginPass" placeholder="Mot de passe">
+            <button onclick="handleLogin()">Se connecter</button>
+            <p id="loginMsg" style="color: red; margin-top: 10px;"></p>
+        </div>
+    </div>
+
+    <div id="dashboard-ui" style="display: none;">
+        <div class="nav">
+            <h1>Mon Dashboard</h1>
+            <button class="btn-logout" onclick="logout()">Déconnexion</button>
+        </div>
+        
+        <div style="margin-top: 20px;">
+            <h3>Ajouter un article</h3>
+            <input type="text" id="artTitle" placeholder="Titre">
+            <input type="text" id="artAuthor" placeholder="Auteur">
+            <input type="text" id="artCat" placeholder="Catégorie">
+            <textarea id="artContent" placeholder="Contenu"></textarea>
+            <button onclick="saveArticle()">Publier l'article</button>
+        </div>
+
+        <hr>
+        <h3>Liste des articles</h3>
+        <div id="articlesList"></div>
+    </div>
+
+    <script>
+        // Utilise dynamiquement l'URL de l'hébergeur (Render)
+        const API_URL = window.location.origin;
+
+        // Vérification de session au démarrage
+        window.onload = () => {
+            if (localStorage.getItem('token')) {
+                showDashboard();
+            }
+        };
+
+        function showDashboard() {
+            document.getElementById('login-overlay').style.display = 'none';
+            document.getElementById('dashboard-ui').style.display = 'block';
+            loadArticles();
+        }
+
+        async function handleLogin() {
+            const user = document.getElementById('loginUser').value;
+            const pass = document.getElementById('loginPass').value;
+
+            try {
+                const res = await fetch(`${API_URL}/api/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: user, password: pass })
+                });
+
+                const data = await res.json();
+                if (data.token) {
+                    localStorage.setItem('token', data.token); // Stockage du JWT
+                    showDashboard();
+                } else {
+                    document.getElementById('loginMsg').innerText = "Identifiants incorrects";
+                }
+            } catch (err) {
+                document.getElementById('loginMsg').innerText = "Erreur de connexion au serveur";
+            }
+        }
+
+        async function saveArticle() {
+            const articleData = {
+                title: document.getElementById('artTitle').value,
+                content: document.getElementById('artContent').value,
+                author: document.getElementById('artAuthor').value,
+                category: document.getElementById('artCat').value,
+                date: new Date().toLocaleDateString('fr-FR'),
+                tags: []
+            };
+            
+            // Envoi avec le Token d'autorisation requis par le serveur 
+            const response = await fetch(`${API_URL}/api/articles`, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + localStorage.getItem('token') 
+                },
+                body: JSON.stringify(articleData)
+            });
+
+            if (response.ok) {
+                alert("Article ajouté !");
+                location.reload();
+            } else {
+                alert("Erreur lors de l'ajout (Session expirée ?)");
+            }
+        }
+
+        async function loadArticles() {
+            const res = await fetch(`${API_URL}/api/articles`);
+            const articles = await res.json();
+            const container = document.getElementById('articlesList');
+            container.innerHTML = articles.map(art => `
+                <div style="border: 1px solid #ccc; padding: 10px; margin-bottom: 10px;">
+                    <h4>${art.title}</h4>
+                    <button onclick="deleteArticle(${art.id})" style="color: red;">Supprimer</button>
+                </div>
+            `).join('');
+        }
+
+        async function deleteArticle(id) {
+            if(!confirm("Supprimer cet article ?")) return;
+
+            const response = await fetch(`${API_URL}/api/articles/${id}`, {
+                method: 'DELETE',
+                headers: { 
+                    'Authorization': 'Bearer ' + localStorage.getItem('token') 
+                }
+            });
+
+            if (response.ok) {
+                loadArticles();
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem('token');
+            location.reload();
+        }
+    </script>
+</body>
+</html>
